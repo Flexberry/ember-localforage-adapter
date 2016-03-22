@@ -3,9 +3,13 @@
 
 module.exports = {
   name: 'ember-localforage-adapter',
-  included: function included(app) {
-    this._super.included(app);
 
-    app.import(app.bowerDirectory + '/localforage/dist/localforage.js');
+  included: function(app) {
+    this._super.included.apply(this._super, arguments);
+
+    app.import({
+      development: 'bower_components/localforage/dist/localforage.js',
+      production:  'bower_components/localforage/dist/localforage.min.js'
+    });
   }
 };
