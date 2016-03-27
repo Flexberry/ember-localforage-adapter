@@ -120,7 +120,7 @@ export default DS.Adapter.extend(Ember.Evented, {
         }
       }
 
-      if (isMatching) {
+      if (isMatching || Ember.$.isEmptyObject(query)) {
         if (singleMatch) {
           return record;
         }
