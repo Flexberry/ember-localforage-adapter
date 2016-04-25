@@ -31,7 +31,7 @@ export default DS.Adapter.extend(Ember.Evented, {
   findRecord(store, type, id) {
     return this._getNamespaceData(type).then((namespaceData) => {
       const record = namespaceData.records[id];
-      
+
       if (!record) {
         return Ember.RSVP.reject();
       }
@@ -69,14 +69,23 @@ export default DS.Adapter.extend(Ember.Evented, {
   },
 
   queryRecord(store, type, query) {
-    return this._getNamespaceData(type).then((namespaceData) => {
-      const record = this._query(namespaceData.records, query, true);
+    var modelName = type.modelName;
+    var proj = this._extractProjectionFromQuery(modelName, type, query);
+    var _this = this;
+    return new Ember.RSVP.Promise(function(resolve, reject) {
+      _this._getNamespaceData(type).then((namespaceData) => {
+        const record = _this._query(namespaceData.records, query, true);
 
-      if (!record) {
-        return Ember.RSVP.reject();
-      }
+        if (!record) {
+          reject(new Error(`Record of type ${modelName} with id '${record.id}' is not fulfilling specified query`));
+        }
 
-      return record;
+        _this._completeLoadRecord(store, type, record, proj).then(function(completeRecord) {
+          resolve(completeRecord);
+        });
+      }).catch(function(reason) {
+        reject(reason);
+      });
     });
   },
 
@@ -94,8 +103,26 @@ export default DS.Adapter.extend(Ember.Evented, {
    *  { complete: true, name: /foo|bar/ }
    */
   query(store, type, query) {
-    return this._getNamespaceData(type).then((namespaceData) => {
-      return this._query(namespaceData.records, query);
+    var modelName = type.modelName;
+    var proj = this._extractProjectionFromQuery(modelName, type, query);
+    var _this = this;
+    return new Ember.RSVP.Promise(function(resolve, reject) {
+      _this._getNamespaceData(type).then((namespaceData) => {
+        var recordArray = _this._query(namespaceData.records, query);
+        let promises = Ember.A();
+        for (let i = 0; i < recordArray.length; i++) {
+          let record = recordArray[i];
+          promises.pushObject(_this._completeLoadRecord(store, type, record, proj));
+        }
+
+        Ember.RSVP.all(promises).then(() => {
+          resolve(recordArray);
+        }).catch(function(reason) {
+          reject(reason);
+        });
+      }).catch(function(reason) {
+        reject(reason);
+      });
     });
   },
 
@@ -154,9 +181,115 @@ export default DS.Adapter.extend(Ember.Evented, {
 
   // private
 
+  /**
+   * Retrieves projection from query and returns it.
+   * Retrieved projection removes from the query.
+   *
+   * @method _extractProjectionFromQuery
+   * @private
+   *
+   * @param {String} modelName The name of the model type.
+   * @param {subclass of DS.Model} typeClass Model type.
+   * @param {Object} [query] Query parameters.
+   * @param {String} query.projection Projection name.
+   * @return {Object} Extracted projection from query or null
+   *                  if projection is not set in query.
+   */
+  _extractProjectionFromQuery: function(modelName, typeClass, query) {
+    if (query && query.projection) {
+      let proj = query.projection;
+      if (typeof query.projection === 'string') {
+        let projName = query.projection;
+        proj = typeClass.projections.get(projName);
+      }
+
+      delete query.projection;
+      return proj;
+    }
+
+    return null;
+  },
+
+  /**
+   * Completes loading record for given projection.
+   *
+   * @method _completeLoadingRecord
+   * @private
+   *
+   * @param {subclass of DS.Store} store Store to use for complete loading record.
+   * @param {subclass of DS.Model} type Model type.
+   * @param {Object} record Main record loaded by adapter.
+   * @param {Object} projection Projection for complete loading of record.
+   * @return {Object} Completely loaded record with all properties
+   *                  include relationships corresponds to given projection
+   */
+  _completeLoadRecord: function(store, type, record, projection) {
+    function loadRelatedRecord(store, type, id, proj) {
+      let relatedRecord = store.peekRecord(proj.modelName, id);
+      if (Ember.isNone(relatedRecord)) {
+        let options = {
+          id: id,
+          projection: proj
+        };
+        return this.queryRecord(store, type, options);
+      }
+      else {
+        let relatedRecordObject = relatedRecord.serialize({includeId: true});
+        return this._completeLoadRecord(store, type, relatedRecordObject, proj);
+      }
+    }
+
+    function isAsync(type, attrName) {
+      let relationshipMeta = Ember.get(type, 'relationshipsByName').get(attrName);
+    }
+
+    let promises = Ember.A();
+    let attributes = projection.attributes;
+    for (var attrName in attributes) {
+      if (attributes.hasOwnProperty(attrName)) {
+        let attr = attributes[attrName];
+        let relatedModelType = (attr.kind === 'belongsTo' || attr.kind === 'hasMany') ? store.modelFor(attr.modelName) : null;
+        switch (attr.kind) {
+          case 'attr':
+            break;
+          case 'belongsTo':
+            // let primaryKeyName = this.serializer.get('primaryKey');
+            isAsync(type, attrName);
+            let id = record[attrName];
+            if (!Ember.isNone(id)) {
+              promises.pushObject(loadRelatedRecord.call(this, store, relatedModelType, id, attr).then((relatedRecord) => {
+                delete record[attrName];
+                record[attrName] = relatedRecord;
+              }));
+            }
+
+            break;
+          case 'hasMany':
+            let ids = Ember.copy(record[attrName]);
+            delete record[attrName];
+            record[attrName] = [];
+            for (var i = 0; i < ids.length; i++) {
+              let id = ids[i];
+              promises.pushObject(loadRelatedRecord.call(this, store, relatedModelType, id, attr).then((relatedRecord) => {
+                record[attrName].push(relatedRecord);
+              }));
+            }
+
+            break;
+          default:
+            throw new Error(`Unknown kind of projection attribute: ${attr.kind}`);
+        }
+      }
+    }
+
+    return Ember.RSVP.all(promises).then(() => {
+      return record;
+    });
+  },
+
   _setNamespaceData(type, namespaceData) {
     const modelNamespace = this._modelNamespace(type);
-    
+
     return this._loadData().then((storage) => {
       if (this.caching !== 'none') {
         this.cache.set(modelNamespace, namespaceData);
