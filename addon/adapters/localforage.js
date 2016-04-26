@@ -2,6 +2,8 @@ import Ember from 'ember';
 import DS from 'ember-data';
 import LFQueue from 'ember-localforage-adapter/utils/queue';
 import LFCache from 'ember-localforage-adapter/utils/cache';
+import isAsync from 'ember-localforage-adapter/utils/is-async';
+import isObject from 'ember-localforage-adapter/utils/is-object';
 
 export default DS.Adapter.extend(Ember.Evented, {
 
@@ -224,67 +226,104 @@ export default DS.Adapter.extend(Ember.Evented, {
    *                  include relationships corresponds to given projection
    */
   _completeLoadRecord: function(store, type, record, projection) {
-    function loadRelatedRecord(store, type, id, proj) {
-      let relatedRecord = store.peekRecord(proj.modelName, id);
-      if (Ember.isNone(relatedRecord)) {
-        let options = {
-          id: id,
-          projection: proj
-        };
-        return this.queryRecord(store, type, options);
-      }
-      else {
-        let relatedRecordObject = relatedRecord.serialize({includeId: true});
-        return this._completeLoadRecord(store, type, relatedRecordObject, proj);
-      }
-    }
-
-    function isAsync(type, attrName) {
-      let relationshipMeta = Ember.get(type, 'relationshipsByName').get(attrName);
-    }
-
     let promises = Ember.A();
     let attributes = projection.attributes;
     for (var attrName in attributes) {
       if (attributes.hasOwnProperty(attrName)) {
-        let attr = attributes[attrName];
-        let relatedModelType = (attr.kind === 'belongsTo' || attr.kind === 'hasMany') ? store.modelFor(attr.modelName) : null;
-        switch (attr.kind) {
-          case 'attr':
-            break;
-          case 'belongsTo':
-            // let primaryKeyName = this.serializer.get('primaryKey');
-            isAsync(type, attrName);
-            let id = record[attrName];
-            if (!Ember.isNone(id)) {
-              promises.pushObject(loadRelatedRecord.call(this, store, relatedModelType, id, attr).then((relatedRecord) => {
-                delete record[attrName];
-                record[attrName] = relatedRecord;
-              }));
-            }
-
-            break;
-          case 'hasMany':
-            let ids = Ember.copy(record[attrName]);
-            delete record[attrName];
-            record[attrName] = [];
-            for (var i = 0; i < ids.length; i++) {
-              let id = ids[i];
-              promises.pushObject(loadRelatedRecord.call(this, store, relatedModelType, id, attr).then((relatedRecord) => {
-                record[attrName].push(relatedRecord);
-              }));
-            }
-
-            break;
-          default:
-            throw new Error(`Unknown kind of projection attribute: ${attr.kind}`);
-        }
+        this._replaceIdToHash(store, type,  record, attributes, attrName, promises);
       }
     }
 
     return Ember.RSVP.all(promises).then(() => {
+      let relationshipNames = Ember.get(type, 'relationshipNames');
+      let belongsTo = relationshipNames.belongsTo;
+      for (let i = 0; i < belongsTo.length; i++) {
+        let relationshipName = belongsTo[i];
+        if (!isObject(record[relationshipName])) {
+          record[relationshipName] = null;
+        }
+      }
+
+      let hasMany = relationshipNames.hasMany;
+      for (let i = 0; i < hasMany.length; i++) {
+        let relationshipName = hasMany[i];
+        if (!Ember.isArray(record[relationshipName])) {
+          record[relationshipName] = [];
+        }
+        else {
+          let hasUnloadedObjects = false;
+          for (let j = 0; j < record[relationshipName].length; j++) {
+            if (!isObject(record[relationshipName][j])) {
+              hasUnloadedObjects = true;
+            }
+          }
+
+          if (hasUnloadedObjects) {
+            record[relationshipName] = [];
+          }
+        }
+      }
+
       return record;
     });
+  },
+
+  _loadRelatedRecord(store, type, id, proj) {
+    let relatedRecord = store.peekRecord(proj.modelName, id);
+    if (Ember.isNone(relatedRecord)) {
+      let options = {
+        id: id,
+        projection: proj
+      };
+      return this.queryRecord(store, type, options);
+    }
+    else {
+      let relatedRecordObject = relatedRecord.serialize({includeId: true});
+      return this._completeLoadRecord(store, type, relatedRecordObject, proj);
+    }
+  },
+
+  _replaceIdToHash(store, type,  record, attributes, attrName, promises) {
+    let attr = attributes[attrName];
+      let relatedModelType = (attr.kind === 'belongsTo' || attr.kind === 'hasMany') ? store.modelFor(attr.modelName) : null;
+      switch (attr.kind) {
+        case 'attr':
+          break;
+        case 'belongsTo':
+          if (!isAsync(type, attrName)) {
+            // let primaryKeyName = this.serializer.get('primaryKey');
+            let id = record[attrName];
+            if (!Ember.isNone(id)) {
+              promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr).then((relatedRecord) => {
+                delete record[attrName];
+                record[attrName] = relatedRecord;
+              }));
+            }
+          }
+
+          break;
+        case 'hasMany':
+          if (!isAsync(type, attrName)) {
+            if (Ember.isArray(record[attrName])) {
+              let ids = Ember.copy(record[attrName]);
+              delete record[attrName];
+              record[attrName] = [];
+              for (var i = 0; i < ids.length; i++) {
+                let id = ids[i];
+                promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr).then((relatedRecord) => {
+                  record[attrName].push(relatedRecord);
+                }));
+              }
+            }
+            else {
+              record[attrName] = [];
+            }
+          }
+
+          break;
+        default:
+          throw new Error(`Unknown kind of projection attribute: ${attr.kind}`);
+      }
   },
 
   _setNamespaceData(type, namespaceData) {
