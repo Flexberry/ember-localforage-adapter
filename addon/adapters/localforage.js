@@ -227,10 +227,12 @@ export default DS.Adapter.extend(Ember.Evented, {
    */
   _completeLoadRecord: function(store, type, record, projection) {
     let promises = Ember.A();
-    let attributes = projection.attributes;
-    for (var attrName in attributes) {
-      if (attributes.hasOwnProperty(attrName)) {
-        this._replaceIdToHash(store, type,  record, attributes, attrName, promises);
+    if (!Ember.isNone(projection)) {
+      let attributes = projection.attributes;
+      for (var attrName in attributes) {
+        if (attributes.hasOwnProperty(attrName)) {
+          this._replaceIdToHash(store, type,  record, attributes, attrName, promises);
+        }
       }
     }
 
