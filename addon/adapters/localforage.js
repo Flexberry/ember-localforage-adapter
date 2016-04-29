@@ -239,7 +239,7 @@ export default DS.Adapter.extend(Ember.Evented, {
       let belongsTo = relationshipNames.belongsTo;
       for (let i = 0; i < belongsTo.length; i++) {
         let relationshipName = belongsTo[i];
-        if (!isObject(record[relationshipName])) {
+        if (!isAsync(type, relationshipName) && !isObject(record[relationshipName])) {
           record[relationshipName] = null;
         }
       }
@@ -251,15 +251,17 @@ export default DS.Adapter.extend(Ember.Evented, {
           record[relationshipName] = [];
         }
         else {
-          let hasUnloadedObjects = false;
-          for (let j = 0; j < record[relationshipName].length; j++) {
-            if (!isObject(record[relationshipName][j])) {
-              hasUnloadedObjects = true;
+          if (!isAsync(type, relationshipName)) {
+            let hasUnloadedObjects = false;
+            for (let j = 0; j < record[relationshipName].length; j++) {
+              if (!isObject(record[relationshipName][j])) {
+                hasUnloadedObjects = true;
+              }
             }
-          }
 
-          if (hasUnloadedObjects) {
-            record[relationshipName] = [];
+            if (hasUnloadedObjects) {
+              record[relationshipName] = [];
+            }
           }
         }
       }
