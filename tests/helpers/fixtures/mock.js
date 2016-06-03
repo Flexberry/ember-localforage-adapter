@@ -1,16 +1,16 @@
 export default {
-  'subscriber': {
+  subscriber: {
     records: {
-      'externalS1': {
+      externalS1: {
         id: 'externalS1',
         name: 'John'
       }
     }
   },
 
-  'author': {
+  author: {
     records: {
-      'externalA1': {
+      externalA1: {
         id: 'externalA1',
         name: 'Jane'
       }

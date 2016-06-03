@@ -13,7 +13,7 @@ var get = Ember.get;
 var proto = Object.prototype;
 var gpo = Object.getPrototypeOf;
 
-module("Cache integration", {
+module('Cache integration', {
   beforeEach: function(assert) {
     let done = assert.async();
     run(function() {
@@ -43,13 +43,14 @@ module("Cache integration", {
  * @returns {boolean}
  */
 function isPojo(obj) {
-  if (obj === null || typeof obj !== "object") {
+  if (obj === null || typeof obj !== 'object') {
     return false;
   }
+
   return gpo(obj) === proto;
 }
 
-test("cache should be unbound data", function(assert) {
+test('cache should be unbound data', function(assert) {
   assert.expect(13);
 
   let done = assert.async();
@@ -60,15 +61,15 @@ test("cache should be unbound data", function(assert) {
       var secondRecord = records.objectAt(1);
       var thirdRecord = records.objectAt(2);
 
-      assert.equal(get(records, 'length'), 3, "3 items were found");
+      assert.equal(get(records, 'length'), 3, '3 items were found');
 
-      assert.equal(get(firstRecord, 'name'), "one", "First item's name is one");
-      assert.equal(get(secondRecord, 'name'), "two", "Second item's name is two");
-      assert.equal(get(thirdRecord, 'name'), "three", "Third item's name is three");
+      assert.equal(get(firstRecord, 'name'), 'one', 'First item\'s name is one');
+      assert.equal(get(secondRecord, 'name'), 'two', 'Second item\'s name is two');
+      assert.equal(get(thirdRecord, 'name'), 'three', 'Third item\'s name is three');
 
-      assert.equal(get(firstRecord, 'day'), 1, "First item's day is 1");
-      assert.equal(get(secondRecord, 'day'), 2, "Second item's day is 2");
-      assert.equal(get(thirdRecord, 'day'), 3, "Third item's day is 3");
+      assert.equal(get(firstRecord, 'day'), 1, 'First item\'s day is 1');
+      assert.equal(get(secondRecord, 'day'), 2, 'Second item\'s day is 2');
+      assert.equal(get(thirdRecord, 'day'), 3, 'Third item\'s day is 3');
 
       listCache = adapter.get('cache').get('list');
       assert.equal(isPojo(listCache), true);
