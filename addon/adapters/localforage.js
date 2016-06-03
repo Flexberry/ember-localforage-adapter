@@ -251,8 +251,7 @@ export default DS.Adapter.extend(Ember.Evented, {
         let relationshipName = hasMany[i];
         if (!Ember.isArray(record[relationshipName])) {
           record[relationshipName] = [];
-        }
-        else {
+        } else {
           if (!isAsync(type, relationshipName)) {
             let hasUnloadedObjects = false;
             for (let j = 0; j < record[relationshipName].length; j++) {
@@ -280,54 +279,54 @@ export default DS.Adapter.extend(Ember.Evented, {
         projection: proj
       };
       return this.queryRecord(store, type, options);
-    }
-    else {
-      let relatedRecordObject = relatedRecord.serialize({includeId: true});
+    } else {
+      let relatedRecordObject = relatedRecord.serialize({ includeId: true });
       return this._completeLoadRecord(store, type, relatedRecordObject, proj);
     }
   },
 
   _replaceIdToHash(store, type,  record, attributes, attrName, promises) {
     let attr = attributes[attrName];
-      let relatedModelType = (attr.kind === 'belongsTo' || attr.kind === 'hasMany') ? store.modelFor(attr.modelName) : null;
-      switch (attr.kind) {
-        case 'attr':
-          break;
-        case 'belongsTo':
-          if (!isAsync(type, attrName)) {
-            // let primaryKeyName = this.serializer.get('primaryKey');
-            let id = record[attrName];
-            if (!Ember.isNone(id)) {
-              promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr).then((relatedRecord) => {
-                delete record[attrName];
-                record[attrName] = relatedRecord;
-              }));
-            }
-          }
-
-          break;
-        case 'hasMany':
-          if (!isAsync(type, attrName)) {
-            if (Ember.isArray(record[attrName])) {
-              let ids = Ember.copy(record[attrName]);
+    let relatedModelType = (attr.kind === 'belongsTo' || attr.kind === 'hasMany') ? store.modelFor(attr.modelName) : null;
+    switch (attr.kind) {
+      case 'attr':
+        break;
+      case 'belongsTo':
+        if (!isAsync(type, attrName)) {
+          // let primaryKeyName = this.serializer.get('primaryKey');
+          let id = record[attrName];
+          if (!Ember.isNone(id)) {
+            promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr).then((relatedRecord) => {
               delete record[attrName];
-              record[attrName] = [];
-              for (var i = 0; i < ids.length; i++) {
-                let id = ids[i];
-                promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr).then((relatedRecord) => {
-                  record[attrName].push(relatedRecord);
-                }));
-              }
-            }
-            else {
-              record[attrName] = [];
-            }
+              record[attrName] = relatedRecord;
+            }));
           }
+        }
 
-          break;
-        default:
-          throw new Error(`Unknown kind of projection attribute: ${attr.kind}`);
-      }
+        break;
+      case 'hasMany':
+        if (!isAsync(type, attrName)) {
+          if (Ember.isArray(record[attrName])) {
+            let ids = Ember.copy(record[attrName]);
+            delete record[attrName];
+            record[attrName] = [];
+            let pushToRecordArray = (relatedRecord) => {
+              record[attrName].push(relatedRecord);
+            };
+
+            for (var i = 0; i < ids.length; i++) {
+              let id = ids[i];
+              promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr).then(pushToRecordArray));
+            }
+          } else {
+            record[attrName] = [];
+          }
+        }
+
+        break;
+      default:
+        throw new Error(`Unknown kind of projection attribute: ${attr.kind}`);
+    }
   },
 
   _setNamespaceData(type, namespaceData) {
@@ -371,9 +370,7 @@ export default DS.Adapter.extend(Ember.Evented, {
   },
 
   _loadData() {
-    return window.localforage.getItem(this._adapterNamespace()).then((storage) => {
-      return storage ? storage : {};
-    });
+    return window.localforage.getItem(this._adapterNamespace()).then((storage) => storage ? storage : {});
   },
 
   _modelNamespace(type) {
@@ -389,7 +386,8 @@ function updateOrCreate(store, type, snapshot) {
   return this.queue.attach((resolve) => {
     this._getNamespaceData(type).then((namespaceData) => {
       const serializer = store.serializerFor(type.modelName);
-      const recordHash = serializer.serialize(snapshot, {includeId: true});
+      const recordHash = serializer.serialize(snapshot, { includeId: true });
+
       // update(id comes from snapshot) or create(id comes from serialization)
       const id = snapshot.id || recordHash.id;
 

@@ -10,7 +10,7 @@ var run = Ember.run;
 
 var FIXTURES = [{
   id: 1,
-  name: "test"
+  name: 'test'
 }];
 
 module('Cache helper', {

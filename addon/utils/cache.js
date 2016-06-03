@@ -24,7 +24,7 @@ export default Ember.Object.extend({
 
   replace(data) {
     this.clear();
-    
+
     for (let index in data) {
       this.set(index, data[index]);
     }

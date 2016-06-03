@@ -8,10 +8,10 @@ export default DS.JSONSerializer.extend({
     if (this._mustSerialize(key)) {
       return true;
     }
-    
+
     return this._canSerialize(key) &&
       (relationshipType === 'manyToNone' ||
         relationshipType === 'manyToMany' ||
         relationshipType === 'manyToOne');
-  }  
+  }
 });
