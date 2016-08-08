@@ -71,9 +71,16 @@ export default DS.Adapter.extend(Ember.Evented, {
   },
 
   queryRecord(store, type, query) {
-    var modelName = type.modelName;
-    var proj = this._extractProjectionFromQuery(modelName, type, query);
-    var _this = this;
+    let modelName = type.modelName;
+    let proj = this._extractProjectionFromQuery(modelName, type, query);
+    let originType = null;
+    if (query && query.originType) {
+      originType = query.originType;
+
+      delete query.originType;
+    }
+
+    let _this = this;
     return new Ember.RSVP.Promise(function(resolve, reject) {
       _this._getNamespaceData(type).then((namespaceData) => {
         const record = _this._query(namespaceData.records, query, true);
@@ -82,7 +89,7 @@ export default DS.Adapter.extend(Ember.Evented, {
           reject(new Error(`Record of type ${modelName} with id '${record.id}' is not fulfilling specified query`));
         }
 
-        _this._completeLoadRecord(store, type, record, proj).then(function(completeRecord) {
+        _this._completeLoadRecord(store, type, record, proj, originType).then(function(completeRecord) {
           resolve(completeRecord);
         });
       }).catch(function(reason) {
@@ -107,6 +114,13 @@ export default DS.Adapter.extend(Ember.Evented, {
   query(store, type, query) {
     var modelName = type.modelName;
     var proj = this._extractProjectionFromQuery(modelName, type, query);
+    let originType = null;
+    if (query && query.originType) {
+      originType = query.originType;
+
+      delete query.originType;
+    }
+
     var _this = this;
     return new Ember.RSVP.Promise(function(resolve, reject) {
       _this._getNamespaceData(type).then((namespaceData) => {
@@ -114,7 +128,7 @@ export default DS.Adapter.extend(Ember.Evented, {
         let promises = Ember.A();
         for (let i = 0; i < recordArray.length; i++) {
           let record = recordArray[i];
-          promises.pushObject(_this._completeLoadRecord(store, type, record, proj));
+          promises.pushObject(_this._completeLoadRecord(store, type, record, proj, originType));
         }
 
         Ember.RSVP.all(promises).then(() => {
@@ -209,6 +223,13 @@ export default DS.Adapter.extend(Ember.Evented, {
       return proj;
     }
 
+    // If using Query Language
+    if (query && query.projectionName) {
+      let proj = typeClass.projections.get(query.projectionName);
+
+      return proj;
+    }
+
     return null;
   },
 
@@ -222,18 +243,35 @@ export default DS.Adapter.extend(Ember.Evented, {
    * @param {subclass of DS.Model} type Model type.
    * @param {Object} record Main record loaded by adapter.
    * @param {Object} projection Projection for complete loading of record.
+   * @param {subclass of DS.Model} originType Type of model that referencing to main record's model type.
    * @return {Object} Completely loaded record with all properties
    *                  include relationships corresponds to given projection
    */
-  _completeLoadRecord: function(store, type, record, projection) {
+  _completeLoadRecord: function(store, type, record, projection, originType) {
     let promises = Ember.A();
-    if (!Ember.isNone(projection)) {
+    if (!Ember.isNone(projection) && projection.attributes) {
       let attributes = projection.attributes;
-      for (var attrName in attributes) {
+      for (let attrName in attributes) {
         if (attributes.hasOwnProperty(attrName)) {
-          this._replaceIdToHash(store, type,  record, attributes, attrName, promises);
+          this._replaceIdToHash(store, type, record, attributes, attrName, promises);
         }
       }
+    }
+    else {
+      let relationshipNames = Ember.get(type, 'relationshipNames');
+      let allRelationshipNames = Ember.A().concat(relationshipNames.belongsTo, relationshipNames.hasMany).compact();
+      let relationshipsByName = Ember.get(type, 'relationshipsByName');
+      let originTypeModelName = !Ember.isNone(originType) ? originType.modelName : '';
+      allRelationshipNames.forEach(function(attrName) {
+        // Avoid loops formed by inverse attributes.
+        let possibleInverseType = store.modelFor(relationshipsByName.get(attrName).type);
+        let relationshipsByNameOfPossibleInverseType = Ember.get(possibleInverseType, 'relationshipsByName');
+        let inverseAttribute = relationshipsByName.get(attrName).options.inverse;
+        let possibleInverseTypeMeta = !Ember.isNone(inverseAttribute) ? relationshipsByNameOfPossibleInverseType.get(inverseAttribute) : null;
+        if (Ember.isNone(possibleInverseTypeMeta) || relationshipsByName.get(attrName).type !== originTypeModelName) {
+          this._replaceIdToHash(store, type, record, relationshipsByName, attrName, promises);
+        }
+      }, this);
     }
 
     return Ember.RSVP.all(promises).then(() => {
@@ -271,23 +309,31 @@ export default DS.Adapter.extend(Ember.Evented, {
     });
   },
 
-  _loadRelatedRecord(store, type, id, proj) {
-    let relatedRecord = store.peekRecord(proj.modelName, id);
+  _loadRelatedRecord(store, type, id, proj, originType) {
+    let modelName = proj.modelName ? proj.modelName : proj.type;
+    let relatedRecord = store.peekRecord(modelName, id);
     if (Ember.isNone(relatedRecord)) {
-      let options = {
+      let options = proj.modelName ?
+      {
         id: id,
-        projection: proj
+        projection: proj,
+        originType: originType
+      } :
+      {
+        id: id,
+        originType: originType
       };
       return this.queryRecord(store, type, options);
     } else {
       let relatedRecordObject = relatedRecord.serialize({ includeId: true });
-      return this._completeLoadRecord(store, type, relatedRecordObject, proj);
+      return this._completeLoadRecord(store, type, relatedRecordObject, proj, originType);
     }
   },
 
   _replaceIdToHash(store, type,  record, attributes, attrName, promises) {
-    let attr = attributes[attrName];
-    let relatedModelType = (attr.kind === 'belongsTo' || attr.kind === 'hasMany') ? store.modelFor(attr.modelName) : null;
+    let attr = attributes.hasOwnProperty(attrName) ? attributes[attrName] : attributes.get(attrName);
+    let modelName = attr.modelName ? attr.modelName : attr.type;
+    let relatedModelType = (attr.kind === 'belongsTo' || attr.kind === 'hasMany') ? store.modelFor(modelName) : null;
     switch (attr.kind) {
       case 'attr':
         break;
@@ -296,7 +342,7 @@ export default DS.Adapter.extend(Ember.Evented, {
           // let primaryKeyName = this.serializer.get('primaryKey');
           let id = record[attrName];
           if (!Ember.isNone(id)) {
-            promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr).then((relatedRecord) => {
+            promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr, type).then((relatedRecord) => {
               delete record[attrName];
               record[attrName] = relatedRecord;
             }));
@@ -316,7 +362,7 @@ export default DS.Adapter.extend(Ember.Evented, {
 
             for (var i = 0; i < ids.length; i++) {
               let id = ids[i];
-              promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr).then(pushToRecordArray));
+              promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr, type).then(pushToRecordArray));
             }
           } else {
             record[attrName] = [];
