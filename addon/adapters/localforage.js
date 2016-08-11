@@ -256,10 +256,9 @@ export default DS.Adapter.extend(Ember.Evented, {
           this._replaceIdToHash(store, type, record, attributes, attrName, promises);
         }
       }
-    }
-    else {
+    } else {
       let relationshipNames = Ember.get(type, 'relationshipNames');
-      let allRelationshipNames = Ember.A().concat(relationshipNames.belongsTo, relationshipNames.hasMany).compact();
+      let allRelationshipNames = Ember.A().concat(relationshipNames.belongsTo, relationshipNames.hasMany);
       let relationshipsByName = Ember.get(type, 'relationshipsByName');
       let originTypeModelName = !Ember.isNone(originType) ? originType.modelName : '';
       allRelationshipNames.forEach(function(attrName) {
@@ -341,7 +340,7 @@ export default DS.Adapter.extend(Ember.Evented, {
         if (!isAsync(type, attrName)) {
           // let primaryKeyName = this.serializer.get('primaryKey');
           let id = record[attrName];
-          if (!Ember.isNone(id)) {
+          if (!Ember.isNone(id) && (!isObject(id))) {
             promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr, type).then((relatedRecord) => {
               delete record[attrName];
               record[attrName] = relatedRecord;
@@ -362,7 +361,11 @@ export default DS.Adapter.extend(Ember.Evented, {
 
             for (var i = 0; i < ids.length; i++) {
               let id = ids[i];
-              promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr, type).then(pushToRecordArray));
+              if (!isObject(id)) {
+                promises.pushObject(this._loadRelatedRecord(store, relatedModelType, id, attr, type).then(pushToRecordArray));
+              } else {
+                pushToRecordArray(id);
+              }
             }
           } else {
             record[attrName] = [];
